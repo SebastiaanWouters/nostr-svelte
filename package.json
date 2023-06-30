@@ -50,6 +50,7 @@
 	"dependencies": {
 		"@nostr-dev-kit/ndk": "^0.6.5",
 		"crypto-js": "^4.1.1",
+		"nostr-relaypool": "^0.6.28",
 		"nostr-tools": "^1.12.1",
 		"ws": "^8.13.0"
 	}

@@ -1,6 +1,5 @@
 <script async>
-	import { eventStore, nostrSession, messageStore, nostrProfile } from '$lib';
-	import { parseContent } from '$lib/utils.ts';
+	import { eventStore, nostrSession, messageStore, nostrProfile } from '../lib/index.ts';
 	import { onDestroy } from 'svelte';
 
 	const event = {
@@ -26,7 +25,7 @@
 </script>
 
 <div class="">
-	{NostrSession.picture}
+	{$NostrSession.name}
 	{#each $events as event}
 		{event.id}
 	{/each}
