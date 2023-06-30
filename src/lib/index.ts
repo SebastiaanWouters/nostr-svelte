@@ -1,15 +1,18 @@
 import { readable, writable } from 'svelte/store';
 import { SimplePool } from 'nostr-tools';
 import { verifySignature, type Event } from 'nostr-tools';
+import { binarySearchInsert, parseContent } from './utils.js';
 
 interface User {
 	pubkey?: string;
+	picture?: string;
+	name?: string;
 }
+
+const pool = new SimplePool();
 
 function eventStore(relays: string[], filter = {}) {
 	const events = writable<Event[]>([]);
-
-	const pool = new SimplePool();
 
 	let sub = pool.sub([...relays], [filter]);
 
@@ -23,45 +26,64 @@ function eventStore(relays: string[], filter = {}) {
 	return { ...events };
 }
 
-function user(pubkey: string, relays = ['wss://relay.snort.social']) {
-	const user = writable<User>({});
+function nostrSession(event: Event, relays: string[]) {
+	const NostrProfile = writable<User>({});
 
-	const pool = new SimplePool();
+	//include some kind of challenge to verify the user
 
-	let sub = pool.sub([...relays], [{ authors: [pubkey], limit: 10 }]);
+	const valid = verifySignature(event);
+
+	if (valid) {
+		console.log('valid');
+
+		let sub = pool.sub(relays, [{ authors: [event.pubkey], kinds: [1] }]);
+
+		sub.on('event', (event) => {
+			console.log('event');
+			// this will only be called once the first time the event is received
+			const parsed = parseContent(event);
+			NostrProfile.set(parsed);
+		});
+	}
+
+	return { ...NostrProfile };
+}
+
+function messageStore(pubkey: string, relays = ['wss://relay.snort.social']) {
+	const messages = writable<Event[]>([]);
+
+	const fromFilter = { authors: [pubkey], kinds: [4], limit: 10 };
+	const toFilter = { kinds: [4], '#p': [pubkey], limit: 10 };
+
+	let sub = pool.sub([...relays], [fromFilter, toFilter]);
 
 	sub.on('event', (event) => {
 		// this will only be called once the first time the event is received
 		// ...
-		console.log('user');
-		user.set({ pubkey: event.pubkey });
+		messages.update((currentMessages: Event[]) => {
+			// Insert the new event in the correct position to keep the array sorted
+			binarySearchInsert(currentMessages, event, (a, b) => a.created_at - b.created_at);
+
+			// Return the updated messages
+			return currentMessages;
+		});
 	});
 
-	return { ...user };
+	return { ...messages };
 }
 
-function login(event: Event, relays: string[]): Promise<User> {
-	return new Promise((resolve, reject) => {
-		const valid = verifySignature(event);
+function nostrProfile(pubkey: string, relays: string[]) {
+	const NostrProfile = writable<User>({ pubkey });
 
-		if (valid) {
-			const pool = new SimplePool();
+	let sub = pool.sub([...relays], [{ authors: [pubkey], kinds: [0] }]);
 
-			let sub = pool.sub([...relays], [{ authors: [event.pubkey], kinds: [0] }]);
-
-			sub.on('event', (event) => {
-				console.log('login');
-				// this will only be called once the first time the event is received
-				resolve({ pubkey: event.pubkey }); // Resolve the promise with the received event
-			});
-
-			// Set a timeout to reject the promise after 2 seconds
-			setTimeout(() => {
-				reject('Timeout');
-			}, 2000);
-		} else {
-			reject('Invalid signature'); // Reject the promise if the signature is invalid
-		}
+	sub.on('event', (event) => {
+		// this will only be called once the first time the event is received
+		const parsed = parseContent(event);
+		NostrProfile.set(parsed);
 	});
+
+	return { ...NostrProfile };
 }
-export { eventStore, user, login };
+
+export { eventStore, nostrSession, messageStore, nostrProfile, type User };
